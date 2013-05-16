@@ -749,7 +749,7 @@ sim_reg_options(struct opt_odb_t *odb)
 "    <nsets>  - number of sets in the cache\n"
 "    <bsize>  - block size of the cache\n"
 "    <assoc>  - associativity of the cache\n"
-"    <repl>   - block replacement strategy, 'l'-LRU, 'f'-FIFO, 'r'-random\n"
+"    <repl>   - block replacement strategy, 'l'-LRU, 'f'-FIFO, 'r'-random, 'p'-PLRU\n"
 "\n"
 "    Examples:   -cache:dl1 dl1:4096:32:1:l\n"
 "                -dtlb dtlb:128:4096:32:r\n"
