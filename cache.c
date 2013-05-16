@@ -499,45 +499,90 @@ cache_stats(struct cache_t *cp,		/* cache instance */
 
 /* 
  * ===  FUNCTION  ======================================================================
- *         Name:  update_PLRU_state
- *  Description:  
+ *         Name:  get_bindex_width
+ *  Description:  obtain the width of block index according to the cache associativity.
  * =====================================================================================
  */
 int
-update_PLRU_state ( int assoc,
-								int bindex,
-								int orig_PLRU_state	)
+get_bindex_width ( int assoc ) /* associativity of cache */
 {
-		int new_PLRU_state = orig_PLRU_state;
-		/* width_bindex = log2(assoc) */
-		int width_bindex = 0;
-		for (width_bindex = 0; ; width_bindex++)
+	/* width_bindex = log2(assoc) */
+	int width_bindex = 0;
+	for (width_bindex = 0; ; width_bindex++)
+	{
+		if ((assoc >> width_bindex) == 1)
+			break;
+	}
+	return width_bindex;
+}	/* -----  end of function get_bindex_width  ----- */
+
+/* 
+ * ===  FUNCTION  ======================================================================
+ *         Name:  get_PLRU_bindex
+ *  Description:  obtain the block index when using Pseudo-PLRU policy. 
+ * =====================================================================================
+ */
+int
+get_PLRU_bindex ( int assoc,				/* associativity of cache */
+								int PLRU_state ) 		/* current PLRU state */
+{
+	int bindex;
+	int width_bindex = get_bindex_width(assoc);
+	int i = 0;
+	int j = 0;
+	bindex = 0;
+	for (j = 0; j < width_bindex; j++)
+	{
+		int bit = (PLRU_state >> i) & 0x1;	
+		if (bit == 1)
 		{
-			if ((assoc >> width_bindex) == 1)
-				break;
+			i = i*2 + 2;
 		}
-		/* update the Pseudo-LRU state for the set */
-		int width_PLRU_state = assoc - 1;
-		int PLRU_state_mask = (1 << width_PLRU_state) - 1;
-		int i = 0;
-		int j = 0;
-		int mask;
-		for (j = 0; j < width_bindex; j++)
+		else if (bit == 0)
 		{
-			int bit = (bindex >> (width_bindex - 1 - j)) & 0x1;	
-			mask = PLRU_state_mask & (~(1 << i));
-			new_PLRU_state = (new_PLRU_state & mask) | (bit << i);
-			if (bit == 1)
-			{
-				i = i*2 + 1;
-			}
-			else if (bit == 0)
-			{
-				i = i*2 + 2;
-			}
+			i = i*2 + 1;
 		}
-		return new_PLRU_state;
-}		/* -----  end of function update_PLRU_state  ----- */
+		bit = bit ^ 0x1;
+		bindex = (bindex << 1) | bit;
+	}
+	return bindex;
+}	/* -----  end of function get_PLRU_bindex  ----- */
+
+/* 
+ * ===  FUNCTION  ======================================================================
+ *         Name:  update_PLRU_state
+ *  Description:  update Pseudo LRU state according to the index of accessed block.
+ * =====================================================================================
+ */
+int
+update_PLRU_state ( int assoc,				/* associativity of cache */
+								int bindex,						/* block index in the set */
+								int orig_PLRU_state	) /* original PLRU state */
+{
+	int new_PLRU_state = orig_PLRU_state;
+	int width_bindex = get_bindex_width(assoc);
+	/* update the Pseudo-LRU state for the set */
+	int width_PLRU_state = assoc - 1;
+	int PLRU_state_mask = (1 << width_PLRU_state) - 1;
+	int i = 0;
+	int j = 0;
+	int mask;
+	for (j = 0; j < width_bindex; j++)
+	{
+		int bit = (bindex >> (width_bindex - 1 - j)) & 0x1;	
+		mask = PLRU_state_mask & (~(1 << i));
+		new_PLRU_state = (new_PLRU_state & mask) | (bit << i);
+		if (bit == 1)
+		{
+			i = i*2 + 1;
+		}
+		else if (bit == 0)
+		{
+			i = i*2 + 2;
+		}
+	}
+	return new_PLRU_state;
+}	/* -----  end of function update_PLRU_state  ----- */
 
 /* access a cache, perform a CMD operation on cache CP at address ADDR,
    places NBYTES of data at *P, returns latency of operation if initiated
@@ -625,38 +670,10 @@ cache_access(struct cache_t *cp,	/* cache to access */
     break;
 	case PLRU:
     {
-      int bindex = 0;
-			int width_PLRU_state = cp->assoc - 1;
-			int PLRU_state = cp->sets[set].PLRU_state;
-
-			/* width_bindex = log2(assoc) */
-			int width_bindex = 0;
-			for (width_bindex = 0; ; width_bindex++)
-			{
-				if ((cp->assoc >> width_bindex) == 1)
-					break;
-			}
-
-			int i = 0;
-			int j = 0;
-			bindex = 0;
-			for (j = 0; j < width_bindex; j++)
-			{
-				int bit = (PLRU_state >> i) & 0x1;	
-				if (bit == 1)
-				{
-					i = i*2 + 2;
-				}
-				else if (bit == 0)
-				{
-					i = i*2 + 1;
-				}
-				bit = bit ^ 0x1;
-				bindex = (bindex << 1) | bit;
-			}
-      repl = CACHE_BINDEX(cp, cp->sets[set].blks, bindex);
 			int orig_PLRU_state = cp->sets[set].PLRU_state;
-			cp->sets[set].PLRU_state = update_PLRU_state ( cp->assoc, bindex, orig_PLRU_state );
+			int bindex = get_PLRU_bindex(cp->assoc, orig_PLRU_state);
+      repl = CACHE_BINDEX(cp, cp->sets[set].blks, bindex);
+			cp->sets[set].PLRU_state = update_PLRU_state(cp->assoc, bindex, orig_PLRU_state);
     }
 		break;
   case Random:
@@ -771,38 +788,7 @@ cache_access(struct cache_t *cp,	/* cache to access */
 			
 			int orig_PLRU_state = cp->sets[set].PLRU_state;
 			cp->sets[set].PLRU_state = update_PLRU_state ( cp->assoc, bindex, orig_PLRU_state );
-
-			/*
-			int width_bindex = 0;
-			for (width_bindex = 0; ; width_bindex++)
-			{
-				if ((cp->assoc >> width_bindex) == 1)
-					break;
-			}
-
-			int width_PLRU_state = cp->assoc - 1;
-			int PLRU_state = cp->sets[set].PLRU_state;
-			int PLRU_state_mask = (1 << width_PLRU_state) - 1;
-			int mask;
-			int i = 0;
-			int j = 0;
-			for (j = 0; j < width_bindex; j++)
-			{
-				int bit = (bindex >> (width_bindex - 1 - j)) & 0x1;	
-				mask = PLRU_state_mask & (~(1 << i));
-				PLRU_state = (PLRU_state & mask) | (bit << i);
-				if (bit == 1)
-				{
-					i = i*2 + 1;
-				}
-				else if (bit == 0)
-				{
-					i = i*2 + 2;
-				}
-			}
-			cp->sets[set].PLRU_state = PLRU_state;
-			*/
-    }
+	}
   /* tag is unchanged, so hash links (if they exist) are still valid */
 
   /* record the last block to hit */
