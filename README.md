@@ -29,6 +29,8 @@ Example:
 -cache:dl2             ul2:512:64:8:p
 ```
 
+Please further refer to a complete example configuration file _PLRU-256K-8.baseline.cfg_.
+
 ## Compilation ##
 
 ```bash
