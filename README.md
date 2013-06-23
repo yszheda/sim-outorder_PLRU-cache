@@ -2,7 +2,7 @@ SimpleScalar sim-outorder simulator with PLRU policy cache
 ===
 
 We implement the 
-**Tree-based Pseudo LRU** (PLRU) from 
+**Tree-based Pseudo LRU** (PLRU) 
 in the _SimpleScalar_(http://www.simplescalar.com/) sim-outorder simulator.
 
 ## Configuration ##
